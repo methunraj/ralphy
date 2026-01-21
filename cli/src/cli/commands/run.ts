@@ -117,6 +117,7 @@ export async function runLoop(options: RuntimeOptions): Promise<void> {
 			prdFile: options.prdFile,
 			prdIsFolder: options.prdIsFolder,
 			activeSettings,
+			modelOverride: options.modelOverride,
 		});
 	} else {
 		result = await runSequential({
@@ -136,6 +137,7 @@ export async function runLoop(options: RuntimeOptions): Promise<void> {
 			autoCommit: options.autoCommit,
 			browserEnabled: options.browserEnabled,
 			activeSettings,
+			modelOverride: options.modelOverride,
 		});
 	}
 

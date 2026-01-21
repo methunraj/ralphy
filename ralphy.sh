@@ -27,7 +27,7 @@ AUTO_COMMIT=true
 # Runtime options
 SKIP_TESTS=false
 SKIP_LINT=false
-AI_ENGINE="claude"  # claude, opencode, cursor, codex, qwen, droid, or gemini
+AI_ENGINE="claude"  # claude, opencode, cursor, codex, qwen, droid, gemini, or copilot
 MODEL_OVERRIDE=""   # Override default model for any engine (e.g., "sonnet", "gpt-4o-mini")
 DRY_RUN=false
 MAX_ITERATIONS=0  # 0 = unlimited
@@ -650,10 +650,15 @@ run_brownfield_task() {
         "$prompt" 2>&1 | tee "$output_file"
       ;;
     gemini)
-      gemini --approval-mode yolo \
+      gemini --approval-mode yolo --no-sandbox \
         -o stream-json \
         ${MODEL_OVERRIDE:+-m "$MODEL_OVERRIDE"} \
         "$prompt" 2>&1 | tee "$output_file"
+      ;;
+    copilot)
+      copilot --yolo -s \
+        ${MODEL_OVERRIDE:+--model "$MODEL_OVERRIDE"} \
+        -p "$prompt" 2>&1 | tee "$output_file"
       ;;
   esac
 
@@ -702,6 +707,7 @@ ${BOLD}AI ENGINE OPTIONS:${RESET}
   --qwen              Use Qwen-Code
   --droid             Use Factory Droid
   --gemini            Use Gemini CLI
+  --copilot           Use GitHub Copilot CLI
   --model <name>      Override default model for any engine
                       Claude: sonnet, haiku, opus
                       OpenCode: gpt-4o, gpt-4o-mini, o1, o3-mini
@@ -829,6 +835,10 @@ parse_args() {
         ;;
       --gemini)
         AI_ENGINE="gemini"
+        shift
+        ;;
+      --copilot)
+        AI_ENGINE="copilot"
         shift
         ;;
       --model)
@@ -1033,11 +1043,18 @@ check_requirements() {
         exit 1
       fi
       ;;
+    copilot)
+      if ! command -v copilot &>/dev/null; then
+        log_error "GitHub Copilot CLI not found."
+        log_info "Install from: https://githubnext.com/projects/copilot-cli"
+        exit 1
+      fi
+      ;;
     *)
       if ! command -v claude &>/dev/null; then
         log_error "Claude Code CLI not found."
         log_info "Install from: https://github.com/anthropics/claude-code"
-        log_info "Or use another engine: --cursor, --opencode, --codex, --qwen, --gemini"
+        log_info "Or use another engine: --cursor, --opencode, --codex, --qwen, --gemini, --copilot"
         exit 1
       fi
       ;;
@@ -1049,7 +1066,7 @@ check_requirements() {
       claude|cursor)
         log_error "Running as root is not supported with $AI_ENGINE."
         log_info "The --dangerously-skip-permissions flag cannot be used as root for security reasons."
-        log_info "Please run Ralphy as a non-root user, or use a different AI engine (--opencode, --codex, --qwen, --droid, --gemini)."
+        log_info "Please run Ralphy as a non-root user, or use a different AI engine (--opencode, --codex, --qwen, --droid, --gemini, --copilot)."
         exit 1
         ;;
       *)
@@ -1683,10 +1700,16 @@ run_ai_command() {
       ;;
     gemini)
       # Gemini CLI: use stream-json output and yolo approval mode
-      gemini --approval-mode yolo \
+      gemini --approval-mode yolo --no-sandbox \
         -o stream-json \
         ${MODEL_OVERRIDE:+-m "$MODEL_OVERRIDE"} \
         "$prompt" > "$output_file" 2>&1 &
+      ;;
+    copilot)
+      # GitHub Copilot CLI: use yolo mode and silent output
+      copilot --yolo -s \
+        ${MODEL_OVERRIDE:+--model "$MODEL_OVERRIDE"} \
+        -p "$prompt" > "$output_file" 2>&1 &
       ;;
     *)
       # Claude Code: use existing approach
@@ -1793,6 +1816,16 @@ parse_ai_result() {
       if [[ -z "$response" ]]; then
         response="Task completed"
       fi
+      ;;
+    copilot)
+      # Copilot CLI outputs plain text (no JSON format available)
+      # Similar to Cursor - no token counts available
+      response="$result"
+      if [[ -z "$response" ]]; then
+        response="Task completed"
+      fi
+      input_tokens=0
+      output_tokens=0
       ;;
     droid)
       # Droid stream-json parsing
@@ -2257,10 +2290,18 @@ Focus only on implementing: $task_name"
       gemini)
         (
           cd "$worktree_dir"
-          gemini --approval-mode yolo \
+          gemini --approval-mode yolo --no-sandbox \
             -o stream-json \
             ${MODEL_OVERRIDE:+-m "$MODEL_OVERRIDE"} \
             "$prompt"
+        ) > "$tmpfile" 2>>"$log_file"
+        ;;
+      copilot)
+        (
+          cd "$worktree_dir"
+          copilot --yolo -s \
+            ${MODEL_OVERRIDE:+--model "$MODEL_OVERRIDE"} \
+            -p "$prompt"
         ) > "$tmpfile" 2>>"$log_file"
         ;;
       *)
@@ -2847,10 +2888,15 @@ Be careful to preserve functionality from BOTH branches. The goal is to integrat
                 "$resolve_prompt" > "$resolve_tmpfile" 2>&1
               ;;
             gemini)
-              gemini --approval-mode yolo \
+              gemini --approval-mode yolo --no-sandbox \
                 -o stream-json \
                 ${MODEL_OVERRIDE:+-m "$MODEL_OVERRIDE"} \
                 "$resolve_prompt" > "$resolve_tmpfile" 2>&1
+              ;;
+            copilot)
+              copilot --yolo -s \
+                ${MODEL_OVERRIDE:+--model "$MODEL_OVERRIDE"} \
+                -p "$resolve_prompt" > "$resolve_tmpfile" 2>&1
               ;;
             *)
               claude --dangerously-skip-permissions \
@@ -2909,8 +2955,8 @@ show_summary() {
   echo ""
   echo "${BOLD}>>> Cost Summary${RESET}"
 
-  # Cursor and Droid don't provide token usage, but do provide duration
-  if [[ "$AI_ENGINE" == "cursor" ]] || [[ "$AI_ENGINE" == "droid" ]]; then
+  # Cursor, Droid, and Copilot don't provide token usage
+  if [[ "$AI_ENGINE" == "cursor" ]] || [[ "$AI_ENGINE" == "droid" ]] || [[ "$AI_ENGINE" == "copilot" ]]; then
     echo "${DIM}Token usage not available (CLI doesn't expose this data)${RESET}"
     if [[ "$total_duration_ms" -gt 0 ]]; then
       local dur_sec=$((total_duration_ms / 1000))
@@ -3002,6 +3048,7 @@ main() {
       qwen) command -v qwen &>/dev/null || { log_error "Qwen-Code CLI not found"; exit 1; } ;;
       droid) command -v droid &>/dev/null || { log_error "Factory Droid CLI not found"; exit 1; } ;;
       gemini) command -v gemini &>/dev/null || { log_error "Gemini CLI not found"; exit 1; } ;;
+      copilot) command -v copilot &>/dev/null || { log_error "GitHub Copilot CLI not found"; exit 1; } ;;
     esac
 
     if ! git rev-parse --git-dir >/dev/null 2>&1; then
@@ -3020,6 +3067,7 @@ main() {
       qwen) engine_display="${GREEN}Qwen-Code${RESET}" ;;
       droid) engine_display="${MAGENTA}Factory Droid${RESET}" ;;
       gemini) engine_display="${GREEN}Gemini CLI${RESET}" ;;
+      copilot) engine_display="${BLUE}GitHub Copilot${RESET}" ;;
       *) engine_display="${MAGENTA}Claude Code${RESET}" ;;
     esac
     echo "Engine: $engine_display"
@@ -3056,6 +3104,7 @@ main() {
     qwen) engine_display="${GREEN}Qwen-Code${RESET}" ;;
     droid) engine_display="${MAGENTA}Factory Droid${RESET}" ;;
     gemini) engine_display="${GREEN}Gemini CLI${RESET}" ;;
+    copilot) engine_display="${BLUE}GitHub Copilot${RESET}" ;;
     *) engine_display="${MAGENTA}Claude Code${RESET}" ;;
   esac
   echo "Engine: $engine_display"

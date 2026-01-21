@@ -59,6 +59,7 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 	}
 
 	try {
+		const engineOptions = options.modelOverride ? { modelOverride: options.modelOverride } : undefined;
 		const result = await withRetry(
 			async () => {
 				spinner.updateStep("Working");
@@ -67,10 +68,10 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 				if (engine.executeStreaming) {
 					return await engine.executeStreaming(prompt, workDir, (step) => {
 						spinner.updateStep(step);
-					});
+					}, engineOptions);
 				}
 
-				const res = await engine.execute(prompt, workDir);
+				const res = await engine.execute(prompt, workDir, engineOptions);
 
 				if (!res.success && res.error && isRetryableError(res.error)) {
 					throw new Error(res.error);

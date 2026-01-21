@@ -16,7 +16,8 @@ export class GeminiEngine extends BaseAIEngine {
 	cliCommand = "gemini";
 
 	async execute(prompt: string, workDir: string, options?: EngineOptions): Promise<AIResult> {
-		const args = ["--approval-mode", "yolo", "-o", "stream-json"];
+		// --no-sandbox ensures files are created in the actual working directory
+		const args = ["--approval-mode", "yolo", "-o", "stream-json", "--no-sandbox"];
 		if (options?.modelOverride) {
 			args.push("-m", options.modelOverride);
 		}
@@ -56,7 +57,8 @@ export class GeminiEngine extends BaseAIEngine {
 		onProgress: ProgressCallback,
 		options?: EngineOptions,
 	): Promise<AIResult> {
-		const args = ["--approval-mode", "yolo", "-o", "stream-json"];
+		// --no-sandbox ensures files are created in the actual working directory
+		const args = ["--approval-mode", "yolo", "-o", "stream-json", "--no-sandbox"];
 		if (options?.modelOverride) {
 			args.push("-m", options.modelOverride);
 		}
