@@ -73,6 +73,9 @@ ralphy --cursor     # Cursor
 ralphy --codex      # Codex
 ralphy --qwen       # Qwen-Code
 ralphy --droid      # Factory Droid
+ralphy --copilot    # GitHub Copilot
+ralphy --blackbox   # Blackbox AI
+ralphy --gemini     # Gemini CLI
 ```
 
 ### Model Override
@@ -174,7 +177,7 @@ When enabled (and agent-browser is installed), the AI can:
 ## Requirements
 
 - Node.js 18+ or Bun
-- AI CLI: [Claude Code](https://github.com/anthropics/claude-code), [OpenCode](https://opencode.ai/docs/), [Cursor](https://cursor.com), Codex, Qwen-Code, or [Factory Droid](https://docs.factory.ai/cli/getting-started/quickstart)
+- AI CLI: [Claude Code](https://github.com/anthropics/claude-code), [OpenCode](https://opencode.ai/docs/), [Cursor](https://cursor.com), Codex, Qwen-Code, [Factory Droid](https://docs.factory.ai/cli/getting-started/quickstart), [GitHub Copilot](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/use-copilot-cli), [Blackbox AI](https://www.blackbox.ai/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 - `gh` (optional, for GitHub issues / `--create-pr`)
 
 ## Links

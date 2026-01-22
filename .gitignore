@@ -17,6 +17,10 @@ bun.lockb
 .ralphy/
 .ralphy-worktrees/
 
+# Test directories
+test-*/
+tests-output/
+
 # Editor
 .vscode/
 .idea/

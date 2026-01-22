@@ -86,6 +86,8 @@ ralphy --codex      # Codex
 ralphy --qwen       # Qwen-Code
 ralphy --droid      # Factory Droid
 ralphy --copilot    # GitHub Copilot
+ralphy --blackbox   # Blackbox AI
+ralphy --gemini     # Gemini CLI
 ```
 
 ### Model Override
@@ -246,7 +248,7 @@ capabilities:
 ## Requirements
 
 **Required:**
-- AI CLI: [Claude Code](https://github.com/anthropics/claude-code), [OpenCode](https://opencode.ai/docs/), [Cursor](https://cursor.com), Codex, Qwen-Code, [Factory Droid](https://docs.factory.ai/cli/getting-started/quickstart), or [GitHub Copilot](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/use-copilot-cli)
+- AI CLI: [Claude Code](https://github.com/anthropics/claude-code), [OpenCode](https://opencode.ai/docs/), [Cursor](https://cursor.com), Codex, Qwen-Code, [Factory Droid](https://docs.factory.ai/cli/getting-started/quickstart), [GitHub Copilot](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/use-copilot-cli), [Blackbox AI](https://www.blackbox.ai/), or [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 
 **npm version (`ralphy-cli`):**
 - Node.js 18+ or Bun
@@ -271,6 +273,8 @@ capabilities:
 | Qwen | `qwen` | `--approval-mode yolo` | tokens |
 | Droid | `droid exec` | `--auto medium` | duration |
 | Copilot | `copilot` | `-p` flag | duration |
+| Blackbox | `blackbox` | `--approval-mode yolo` | duration |
+| Gemini | `gemini` | `--approval-mode yolo` | tokens |
 
 ---
 

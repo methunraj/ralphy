@@ -2,7 +2,7 @@
 
 # ============================================
 # Ralphy - Autonomous AI Coding Loop
-# Supports Claude Code, OpenCode, Codex, Cursor, Qwen-Code and Factory Droid
+# Supports Claude Code, OpenCode, Codex, Cursor, Qwen-Code, Factory Droid, GitHub Copilot, Blackbox AI and Gemini CLI
 # Runs until PRD is complete
 # ============================================
 
@@ -27,7 +27,7 @@ AUTO_COMMIT=true
 # Runtime options
 SKIP_TESTS=false
 SKIP_LINT=false
-AI_ENGINE="claude"  # claude, opencode, cursor, codex, qwen, droid, or copilot
+AI_ENGINE="claude"  # claude, opencode, cursor, codex, qwen, droid, copilot, blackbox, or gemini
 MODEL_OVERRIDE=""   # Override default model for any engine (e.g., "sonnet", "gpt-4o-mini")
 DRY_RUN=false
 MAX_ITERATIONS=0  # 0 = unlimited
@@ -649,6 +649,18 @@ run_brownfield_task() {
         ${MODEL_OVERRIDE:+--model "$MODEL_OVERRIDE"} \
         2>&1 | tee "$output_file"
       ;;
+    blackbox)
+      blackbox --approval-mode yolo \
+        --show-token-usage \
+        ${MODEL_OVERRIDE:+--model "$MODEL_OVERRIDE"} \
+        --prompt "$prompt" 2>&1 | tee "$output_file"
+      ;;
+    gemini)
+      gemini --approval-mode yolo \
+        --output-format stream-json \
+        ${MODEL_OVERRIDE:+--model "$MODEL_OVERRIDE"} \
+        "$prompt" 2>&1 | tee "$output_file"
+      ;;
     codex)
       codex exec --full-auto \
         --json \
@@ -701,6 +713,8 @@ ${BOLD}AI ENGINE OPTIONS:${RESET}
   --qwen              Use Qwen-Code
   --droid             Use Factory Droid
   --copilot           Use GitHub Copilot
+  --blackbox          Use Blackbox AI
+  --gemini            Use Gemini CLI
   --model <name>      Override default model for any engine
                       Claude: sonnet, haiku, opus
                       OpenCode: gpt-4o, gpt-4o-mini, o1, o3-mini
@@ -828,6 +842,14 @@ parse_args() {
         ;;
       --copilot)
         AI_ENGINE="copilot"
+        shift
+        ;;
+      --blackbox)
+        AI_ENGINE="blackbox"
+        shift
+        ;;
+      --gemini)
+        AI_ENGINE="gemini"
         shift
         ;;
       --model)
@@ -1031,6 +1053,18 @@ check_requirements() {
         exit 1
       fi
       ;;
+    blackbox)
+      if ! command -v blackbox &>/dev/null; then
+        log_error "Blackbox CLI not found. Install from: https://www.blackbox.ai/"
+        exit 1
+      fi
+      ;;
+    gemini)
+      if ! command -v gemini &>/dev/null; then
+        log_error "Gemini CLI not found. Install from: https://github.com/google-gemini/gemini-cli"
+        exit 1
+      fi
+      ;;
     *)
       if ! command -v claude &>/dev/null; then
         log_error "Claude Code CLI not found."
@@ -1047,7 +1081,7 @@ check_requirements() {
       claude|cursor)
         log_error "Running as root is not supported with $AI_ENGINE."
         log_info "The --dangerously-skip-permissions flag cannot be used as root for security reasons."
-        log_info "Please run Ralphy as a non-root user, or use a different AI engine (--opencode, --codex, --qwen, --droid, --copilot)."
+        log_info "Please run Ralphy as a non-root user, or use a different AI engine (--opencode, --codex, --qwen, --droid, --copilot, --blackbox, --gemini)."
         exit 1
         ;;
       *)
@@ -1677,6 +1711,20 @@ run_ai_command() {
         ${MODEL_OVERRIDE:+--model "$MODEL_OVERRIDE"} \
         > "$output_file" 2>&1 &
       ;;
+    blackbox)
+      # Blackbox: use --approval-mode yolo for full automation
+      blackbox --approval-mode yolo \
+        --show-token-usage \
+        ${MODEL_OVERRIDE:+--model "$MODEL_OVERRIDE"} \
+        --prompt "$prompt" > "$output_file" 2>&1 &
+      ;;
+    gemini)
+      # Gemini: use --approval-mode yolo with stream-json output
+      gemini --approval-mode yolo \
+        --output-format stream-json \
+        ${MODEL_OVERRIDE:+--model "$MODEL_OVERRIDE"} \
+        "$prompt" > "$output_file" 2>&1 &
+      ;;
     codex)
       CODEX_LAST_MESSAGE_FILE="${output_file}.last"
       rm -f "$CODEX_LAST_MESSAGE_FILE"
@@ -1773,6 +1821,50 @@ parse_ai_result() {
       # Tokens remain 0 for Copilot (not available in programmatic mode)
       input_tokens=0
       output_tokens=0
+      ;;
+    blackbox)
+      # Blackbox: parse output (may be JSON or text)
+      # Try JSON parsing first
+      local result_line
+      result_line=$(echo "$result" | grep '"type":"result"' | tail -1)
+
+      if [[ -n "$result_line" ]]; then
+        response=$(echo "$result_line" | jq -r '.result // "Task completed"' 2>/dev/null || echo "Task completed")
+        input_tokens=$(echo "$result_line" | jq -r '.usage.input_tokens // .usage.prompt_tokens // 0' 2>/dev/null || echo "0")
+        output_tokens=$(echo "$result_line" | jq -r '.usage.output_tokens // .usage.completion_tokens // 0' 2>/dev/null || echo "0")
+      else
+        # Fallback to text parsing - filter out status messages
+        local filtered_output
+        filtered_output=$(echo "$result" | grep -v "^\?" | grep -v "^❯" | grep -v "Thinking..." | grep -v "Working..." | grep -v "Processing..." | sed '/^$/d')
+        response=$(echo "$filtered_output" | head -20 | tail -10 || echo "Task completed")
+        
+        # Try to extract token usage from text output
+        local token_match
+        token_match=$(echo "$result" | grep -oE '[Tt]okens?[:\s]+([0-9]+)\s*[/|]\s*([0-9]+)' | head -1)
+        if [[ -n "$token_match" ]]; then
+          input_tokens=$(echo "$token_match" | grep -oE '[0-9]+' | head -1 || echo "0")
+          output_tokens=$(echo "$token_match" | grep -oE '[0-9]+' | tail -1 || echo "0")
+        fi
+      fi
+
+      if [[ -z "$response" ]]; then
+        response="Task completed"
+      fi
+      ;;
+    gemini)
+      # Gemini: stream-json parsing (similar to Claude Code)
+      local result_line
+      result_line=$(echo "$result" | grep '"type":"result"' | tail -1)
+
+      if [[ -n "$result_line" ]]; then
+        response=$(echo "$result_line" | jq -r '.result // "No result text"' 2>/dev/null || echo "Could not parse result")
+        input_tokens=$(echo "$result_line" | jq -r '.usage.input_tokens // 0' 2>/dev/null || echo "0")
+        output_tokens=$(echo "$result_line" | jq -r '.usage.output_tokens // 0' 2>/dev/null || echo "0")
+      fi
+
+      if [[ -z "$response" ]]; then
+        response="Task completed"
+      fi
       ;;
     qwen)
       # Qwen-Code stream-json parsing (similar to Claude Code)
@@ -2244,6 +2336,24 @@ Focus only on implementing: $task_name"
           cd "$worktree_dir"
           copilot -p "$prompt" \
             ${MODEL_OVERRIDE:+--model "$MODEL_OVERRIDE"}
+        ) > "$tmpfile" 2>>"$log_file"
+        ;;
+      blackbox)
+        (
+          cd "$worktree_dir"
+          blackbox --approval-mode yolo \
+            --show-token-usage \
+            ${MODEL_OVERRIDE:+--model "$MODEL_OVERRIDE"} \
+            --prompt "$prompt"
+        ) > "$tmpfile" 2>>"$log_file"
+        ;;
+      gemini)
+        (
+          cd "$worktree_dir"
+          gemini --approval-mode yolo \
+            --output-format stream-json \
+            ${MODEL_OVERRIDE:+--model "$MODEL_OVERRIDE"} \
+            "$prompt"
         ) > "$tmpfile" 2>>"$log_file"
         ;;
       codex)
@@ -2840,6 +2950,17 @@ Be careful to preserve functionality from BOTH branches. The goal is to integrat
                 ${MODEL_OVERRIDE:+--model "$MODEL_OVERRIDE"} \
                 > "$resolve_tmpfile" 2>&1
               ;;
+            blackbox)
+              blackbox --approval-mode yolo \
+                ${MODEL_OVERRIDE:+--model "$MODEL_OVERRIDE"} \
+                --prompt "$resolve_prompt" > "$resolve_tmpfile" 2>&1
+              ;;
+            gemini)
+              gemini --approval-mode yolo \
+                --output-format stream-json \
+                ${MODEL_OVERRIDE:+--model "$MODEL_OVERRIDE"} \
+                "$resolve_prompt" > "$resolve_tmpfile" 2>&1
+              ;;
             codex)
               codex exec --full-auto \
                 --json \
@@ -2902,8 +3023,8 @@ show_summary() {
   echo ""
   echo "${BOLD}>>> Cost Summary${RESET}"
 
-  # Cursor, Droid, and Copilot don't provide token usage, but do provide duration
-  if [[ "$AI_ENGINE" == "cursor" ]] || [[ "$AI_ENGINE" == "droid" ]] || [[ "$AI_ENGINE" == "copilot" ]]; then
+  # Cursor, Droid, Copilot, and Blackbox don't provide reliable token usage, but do provide duration
+  if [[ "$AI_ENGINE" == "cursor" ]] || [[ "$AI_ENGINE" == "droid" ]] || [[ "$AI_ENGINE" == "copilot" ]] || [[ "$AI_ENGINE" == "blackbox" ]]; then
     echo "${DIM}Token usage not available (CLI doesn't expose this data)${RESET}"
     if [[ "$total_duration_ms" -gt 0 ]]; then
       local dur_sec=$((total_duration_ms / 1000))
@@ -2995,6 +3116,8 @@ main() {
       qwen) command -v qwen &>/dev/null || { log_error "Qwen-Code CLI not found"; exit 1; } ;;
       droid) command -v droid &>/dev/null || { log_error "Factory Droid CLI not found"; exit 1; } ;;
       copilot) command -v copilot &>/dev/null || { log_error "GitHub Copilot CLI not found"; exit 1; } ;;
+      blackbox) command -v blackbox &>/dev/null || { log_error "Blackbox CLI not found"; exit 1; } ;;
+      gemini) command -v gemini &>/dev/null || { log_error "Gemini CLI not found"; exit 1; } ;;
     esac
 
     if ! git rev-parse --git-dir >/dev/null 2>&1; then
@@ -3013,6 +3136,8 @@ main() {
       qwen) engine_display="${GREEN}Qwen-Code${RESET}" ;;
       droid) engine_display="${MAGENTA}Factory Droid${RESET}" ;;
       copilot) engine_display="${BLUE}GitHub Copilot${RESET}" ;;
+      blackbox) engine_display="${CYAN}Blackbox AI${RESET}" ;;
+      gemini) engine_display="${BLUE}Gemini CLI${RESET}" ;;
       *) engine_display="${MAGENTA}Claude Code${RESET}" ;;
     esac
     echo "Engine: $engine_display"
@@ -3049,6 +3174,8 @@ main() {
     qwen) engine_display="${GREEN}Qwen-Code${RESET}" ;;
     droid) engine_display="${MAGENTA}Factory Droid${RESET}" ;;
     copilot) engine_display="${BLUE}GitHub Copilot${RESET}" ;;
+    blackbox) engine_display="${CYAN}Blackbox AI${RESET}" ;;
+    gemini) engine_display="${BLUE}Gemini CLI${RESET}" ;;
     *) engine_display="${MAGENTA}Claude Code${RESET}" ;;
   esac
   echo "Engine: $engine_display"
